@@ -7,61 +7,67 @@ from datetime import timedelta
 from os.path import dirname, join, abspath
 st = dt.datetime.now()
 Kockpit_Path =abspath(join(join(dirname(__file__),'..','..','..','..','..')))
-DB1_path =abspath(join(join(dirname(__file__),'..','..','..','..')))
+DB_path =abspath(join(join(dirname(__file__),'..','..','..','..')))
 sys.path.insert(0,'../../')
-sys.path.insert(0, DB1_path)
+sys.path.insert(0, DB_path)
 from Configuration.AppConfig import * 
 from Configuration.Constant import *
 from Configuration.udf import *
 from Configuration import udf as Kockpit
 Filepath = os.path.dirname(os.path.abspath(__file__))
-FilePathSplit = Filepath.split('\\')
+FilePathSplit = Filepath.split('/')
 DBName = FilePathSplit[-5]
 EntityName = FilePathSplit[-4]
 DBEntity = DBName+EntityName
 
-STAGE1_Configurator_Path=Kockpit_Path+"/" +DBName+"/" +EntityName+"/" +"Stage1/ConfiguratorData/"
-STAGE1_PATH=Kockpit_Path+"/" +DBName+"/" +EntityName+"/" +"Stage1/ParquetData"
-STAGE2_PATH=Kockpit_Path+"/" +DBName+"/" +EntityName+"/" +"Stage2/ParquetData"
-conf = SparkConf().setMaster("local[*]").setAppName("Receivables_Snapshot").\
-                    set("spark.sql.shuffle.partitions",16).\
-                    set("spark.serializer", "org.apache.spark.serializer.KryoSerializer").\
-                    set("spark.local.dir", "/tmp/spark-temp").\
-                    set("spark.driver.memory","30g").\
-                    set("spark.executor.memory","30g").\
-                    set("spark.driver.cores",'*').\
-                    set("spark.driver.maxResultSize","0").\
-                    set("spark.sql.debug.maxToStringFields", "1000").\
-                    set("spark.executor.instances", "20").\
-                    set('spark.scheduler.mode', 'FAIR').\
-                    set("spark.sql.broadcastTimeout", "36000").\
-                    set("spark.network.timeout", 10000000).\
-                    set("spark.sql.legacy.parquet.datetimeRebaseModeInWrite", "LEGACY").\
-                    set("spark.sql.legacy.parquet.datetimeRebaseModeInRead", "LEGACY").\
-                    set("spark.sql.legacy.parquet.datetimeRebaseModeInRead", "CORRECTED").\
-                    set("spark.sql.legacy.timeParserPolicy","LEGACY").\
-                    set("spark.sql.legacy.parquet.int96RebaseModeInWrite","LEGACY").\
-                    set("spark.sql.legacy.parquet.int96RebaseModeInWrite","CORRECTED")
+STAGE1_Configurator_Path=HDFS_PATH+DIR_PATH+"/" +DBName+"/" +EntityName+"/" +"Stage1/ConfiguratorData/"
+STAGE1_PATH=HDFS_PATH+DIR_PATH+"/" +DBName+"/" +EntityName+"/" +"Stage1/ParquetData"
+STAGE2_PATH=HDFS_PATH+DIR_PATH+"/" +DBName+"/" +EntityName+"/" +"Stage2/ParquetData"
+conf = SparkConf().setMaster(SPARK_MASTER).setAppName("Receivables_Snapshot")\
+        .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")\
+        .set("spark.kryoserializer.buffer.max","512m")\
+        .set("spark.cores.max","24")\
+        .set("spark.executor.memory","8g")\
+        .set("spark.driver.memory","30g")\
+        .set("spark.driver.maxResultSize","0")\
+        .set("spark.sql.debug.maxToStringFields","500")\
+        .set("spark.driver.maxResultSize","20g")\
+        .set("spark.memory.offHeap.enabled",'true')\
+        .set("spark.memory.offHeap.size","100g")\
+        .set('spark.scheduler.mode', 'FAIR')\
+        .set("spark.sql.broadcastTimeout", "36000")\
+        .set("spark.network.timeout", 10000000)\
+        .set("spark.sql.codegen.wholeStage","false")\
+        .set("spark.jars.packages", "io.delta:delta-core_2.12:0.7.0")\
+        .set("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")\
+        .set("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")\
+        .set("spark.databricks.delta.vacuum.parallelDelete.enabled",'true')\
+        .set("spark.databricks.delta.retentionDurationCheck.enabled",'false')\
+        .set('spark.hadoop.mapreduce.output.fileoutputformat.compress', 'false')\
+        .set("spark.rapids.sql.enabled", True)\
+        .set("spark.sql.legacy.parquet.int96RebaseModeInWrite", "CORRECTED")
 sc = SparkContext(conf = conf)
 sqlCtx = SQLContext(sc)
 spark = sqlCtx.sparkSession
+import delta
+from delta.tables import *
 for dbe in config["DbEntities"]:
     if dbe['ActiveInactive']=='true' and  dbe['Location']==DBEntity:
         CompanyName=dbe['Name']
         CompanyName=CompanyName.replace(" ","")
         try:
             logger = Logger()
-            cle =spark.read.format("parquet").load(STAGE1_PATH+"/Cust_ Ledger Entry")
-            dcle = spark.read.format("parquet").load(STAGE1_PATH+"/Detailed Cust_ Ledg_ Entry")
-            sih=spark.read.format("parquet").load(STAGE1_PATH+"/Sales Invoice Header")
-            cpg =spark.read.format("parquet").load(STAGE1_PATH+"/Customer Posting Group")
-            DSE=spark.read.format("parquet").load(STAGE1_PATH+"/"+"../../"+"Stage2/ParquetData/Masters/DSE").drop("DBName","EntityName")
-            CD=spark.read.format("parquet").load(STAGE1_PATH+"/Collection Details")
-            GLRange=spark.read.format("parquet").load(STAGE1_Configurator_Path+"/tblGLAccountMapping")
-            Company =spark.read.format("parquet").load(STAGE1_Configurator_Path+"/tblCompanyName")
-            ARBucket =spark.read.format("parquet").load(STAGE1_Configurator_Path+"/tblARBucket")
-            pdm =spark.read.format("parquet").load(STAGE1_PATH+"/Payment Delay Masters")
-            doc=spark.read.format("parquet").load(STAGE1_PATH+"/Documentation")
+            cle =spark.read.format("delta").load(STAGE1_PATH+"/Cust_ Ledger Entry")
+            dcle = spark.read.format("delta").load(STAGE1_PATH+"/Detailed Cust_ Ledg_ Entry")
+            sih=spark.read.format("delta").load(STAGE1_PATH+"/Sales Invoice Header")
+            cpg =spark.read.format("delta").load(STAGE1_PATH+"/Customer Posting Group")
+            DSE=spark.read.format("delta").load(STAGE2_PATH+"/Masters/DSE").drop("DBName","EntityName")
+            CD=spark.read.format("delta").load(STAGE1_PATH+"/Collection Details")
+            GLRange=spark.read.format("delta").load(STAGE1_Configurator_Path+"/tblGLAccountMapping")
+            Company =spark.read.format("delta").load(STAGE1_Configurator_Path+"/tblCompanyName")
+            ARBucket =spark.read.format("delta").load(STAGE1_Configurator_Path+"/tblARBucket")
+            pdm =spark.read.format("delta").load(STAGE1_PATH+"/Payment Delay Masters")
+            doc=spark.read.format("delta").load(STAGE1_PATH+"/Documentation")
             Datelog = datetime.datetime.now().strftime('%Y-%m-%d')
             cle = cle.select('CustomerNo_','SalespersonCode','DueDate','EntryNo_','DocumentNo_','PostingDate','CustomerPostingGroup','DimensionSetID','ExternalDocumentNo_','DocumentType','CurrencyCode','AdvanceCollection')
             dcle = dcle.select('AmountLCY','Amount','PostingDate','EntryType','Cust_LedgerEntryNo_','DocumentNo_')
@@ -120,7 +126,7 @@ for dbe in config["DbEntities"]:
             df = Company.filter(col('DBName')==DBName).filter(col('NewCompanyName') == EntityName)
             df = df.select("StartDate","EndDate")
             Calendar_StartDate = df.select(df.StartDate).collect()[0]["StartDate"]
-            Calendar_StartDate = datetime.datetime.strptime(Calendar_StartDate,'%m/%d/%Y').date()
+            Calendar_StartDate = datetime.datetime.strptime(Calendar_StartDate,'%Y-%m-%d').date()
             
             if datetime.date.today().month>int(MnSt)-1:
                     UIStartYr=datetime.date.today().year-int(yr)+1
@@ -129,10 +135,10 @@ for dbe in config["DbEntities"]:
             UIStartDate=datetime.date(UIStartYr,int(MnSt),1)
             UIStartDate=max(Calendar_StartDate,UIStartDate)
             
-            cdate = datetime.datetime.now().strftime("%m/%d/%Y")
+            cdate = datetime.datetime.now().strftime("%Y-%m-%d")
             Calendar_EndDate_conf=df.select(df.EndDate).collect()[0]["EndDate"]
-            Calendar_EndDate_conf = datetime.datetime.strptime(Calendar_EndDate_conf,'%m/%d/%Y').date()
-            Calendar_EndDate_file=datetime.datetime.strptime(cdate,"%m/%d/%Y").date()
+            Calendar_EndDate_conf = datetime.datetime.strptime(Calendar_EndDate_conf,'%Y-%m-%d').date()
+            Calendar_EndDate_file=datetime.datetime.strptime(cdate,"%Y-%m-%d").date()
             Calendar_EndDate=min(Calendar_EndDate_conf,Calendar_EndDate_file)
             days = (Calendar_EndDate-UIStartDate).days   
             def last_day_of_month(date):
@@ -198,7 +204,7 @@ for dbe in config["DbEntities"]:
                                     .withColumnRenamed('DimSetID','DimensionSetID')
             ARsnapshots = ARsnapshots.join(DSE,"DimensionSetID",'left')
             finalDF = RenameDuplicateColumns(ARsnapshots)
-            finalDF.coalesce(1).write.format("parquet").mode("overwrite").option("overwriteSchema", "true").save(STAGE2_PATH+"/"+"Sales/Receivables_Snapshot")
+            finalDF.coalesce(1).write.format("delta").mode("overwrite").option("overwriteSchema", "true").save(STAGE2_PATH+"/"+"Sales/Receivables_Snapshot")
           
             logger.endExecution()
             try:

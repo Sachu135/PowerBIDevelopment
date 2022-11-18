@@ -13,45 +13,51 @@ import datetime as dt
 from datetime import datetime
 st = dt.datetime.now()
 Kockpit_Path =abspath(join(join(dirname(__file__),'..','..','..','..','..')))
-DB1_path =abspath(join(join(dirname(__file__),'..','..','..','..')))
+DB_path =abspath(join(join(dirname(__file__),'..','..','..','..')))
 sys.path.insert(0,'../../')
-sys.path.insert(0, DB1_path)
+sys.path.insert(0, DB_path)
 from Configuration.AppConfig import * 
 from Configuration.Constant import *
 from Configuration.udf import *
 from Configuration import udf as Kockpit
 Filepath = os.path.dirname(os.path.abspath(__file__))
-FilePathSplit = Filepath.split('\\')
+FilePathSplit = Filepath.split('/')
 DBName = FilePathSplit[-5]
 EntityName = FilePathSplit[-4]
 DBEntity = DBName+EntityName
 entityLocation = DBName+EntityName
 Datelog = datetime.datetime.now().strftime('%Y-%m-%d')
-STAGE1_Configurator_Path=Kockpit_Path+"/" +DBName+"/" +EntityName+"/" +"Stage1/ConfiguratorData/"
-STAGE1_PATH=Kockpit_Path+"/" +DBName+"/" +EntityName+"/" +"Stage1/ParquetData"
-STAGE2_PATH=Kockpit_Path+"/" +DBName+"/" +EntityName+"/" +"Stage2/ParquetData"
-conf = SparkConf().setMaster("local[*]").setAppName("ProfitLoss").\
-                    set("spark.sql.shuffle.partitions",16).\
-                    set("spark.serializer", "org.apache.spark.serializer.KryoSerializer").\
-                    set("spark.local.dir", "/tmp/spark-temp").\
-                    set("spark.driver.memory","30g").\
-                    set("spark.executor.memory","30g").\
-                    set("spark.driver.cores",'*').\
-                    set("spark.driver.maxResultSize","0").\
-                    set("spark.sql.debug.maxToStringFields", "1000").\
-                    set("spark.executor.instances", "20").\
-                    set('spark.scheduler.mode', 'FAIR').\
-                    set("spark.sql.broadcastTimeout", "36000").\
-                    set("spark.network.timeout", 10000000).\
-                    set("spark.sql.legacy.parquet.datetimeRebaseModeInWrite", "LEGACY").\
-                    set("spark.sql.legacy.parquet.datetimeRebaseModeInRead", "LEGACY").\
-                    set("spark.sql.legacy.parquet.datetimeRebaseModeInRead", "CORRECTED").\
-                    set("spark.sql.legacy.timeParserPolicy","LEGACY").\
-                    set("spark.sql.legacy.parquet.int96RebaseModeInWrite","LEGACY").\
-                    set("spark.sql.legacy.parquet.int96RebaseModeInWrite","CORRECTED")
+STAGE1_Configurator_Path=HDFS_PATH+DIR_PATH+"/" +DBName+"/" +EntityName+"/" +"Stage1/ConfiguratorData/"
+STAGE1_PATH=HDFS_PATH+DIR_PATH+"/" +DBName+"/" +EntityName+"/" +"Stage1/ParquetData"
+STAGE2_PATH=HDFS_PATH+DIR_PATH+"/" +DBName+"/" +EntityName+"/" +"Stage2/ParquetData"
+conf = SparkConf().setMaster(SPARK_MASTER).setAppName("ProfitLoss")\
+        .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")\
+        .set("spark.kryoserializer.buffer.max","512m")\
+        .set("spark.cores.max","24")\
+        .set("spark.executor.memory","8g")\
+        .set("spark.driver.memory","30g")\
+        .set("spark.driver.maxResultSize","0")\
+        .set("spark.sql.debug.maxToStringFields","500")\
+        .set("spark.driver.maxResultSize","20g")\
+        .set("spark.memory.offHeap.enabled",'true')\
+        .set("spark.memory.offHeap.size","100g")\
+        .set('spark.scheduler.mode', 'FAIR')\
+        .set("spark.sql.broadcastTimeout", "36000")\
+        .set("spark.network.timeout", 10000000)\
+        .set("spark.sql.codegen.wholeStage","false")\
+        .set("spark.jars.packages", "io.delta:delta-core_2.12:0.7.0")\
+        .set("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")\
+        .set("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")\
+        .set("spark.databricks.delta.vacuum.parallelDelete.enabled",'true')\
+        .set("spark.databricks.delta.retentionDurationCheck.enabled",'false')\
+        .set('spark.hadoop.mapreduce.output.fileoutputformat.compress', 'false')\
+        .set("spark.rapids.sql.enabled", True)\
+        .set("spark.sql.legacy.parquet.int96RebaseModeInWrite", "CORRECTED")
 sc = SparkContext(conf = conf)
 sqlCtx = SQLContext(sc)
 spark = sqlCtx.sparkSession
+import delta
+from delta.tables import *
 fs = sc._jvm.org.apache.hadoop.fs.FileSystem.get(sc._jsc.hadoopConfiguration())
 for dbe in config["DbEntities"]:
     if dbe['ActiveInactive']=='true' and  dbe['Location']==DBEntity:
@@ -59,13 +65,13 @@ for dbe in config["DbEntities"]:
         CompanyName=CompanyName.replace(" ","")
         try:
             logger = Logger()
-            GL_Entry_Table =spark.read.format("parquet").load(STAGE1_PATH+"/G_L Entry")
-            GL_Account_Table =spark.read.format("parquet").load(STAGE1_PATH+"/G_L Account")
-            Company =spark.read.format("parquet").load(STAGE1_Configurator_Path+"/tblCompanyName")
-            COA = spark.read.format("parquet").load(STAGE1_PATH+"/"+"../../"+"Stage2/ParquetData/Masters/ChartofAccounts")
+            GL_Entry_Table =spark.read.format("delta").load(STAGE1_PATH+"/G_L Entry")
+            GL_Account_Table =spark.read.format("delta").load(STAGE1_PATH+"/G_L Account")
+            Company =spark.read.format("delta").load(STAGE1_Configurator_Path+"/tblCompanyName")
+            COA = spark.read.format("delta").load(STAGE2_PATH+"/Masters/ChartofAccounts")
             Company = Company.filter(col('DBName')==DBName).filter(col('NewCompanyName') == EntityName)
             Calendar_StartDate = Company.select('StartDate').rdd.flatMap(lambda x: x).collect()[0]
-            Calendar_StartDate = datetime.datetime.strptime(Calendar_StartDate,"%m/%d/%Y").date()
+            Calendar_StartDate = datetime.datetime.strptime(Calendar_StartDate,"%Y-%m-%d").date()
             if datetime.date.today().month>int(MnSt)-1:
                 UIStartYr=datetime.date.today().year-int(yr)+1
             else:
@@ -102,12 +108,12 @@ for dbe in config["DbEntities"]:
                             .withColumn('Cost_Amount',round('Cost_Amount',5))\
                             .withColumn('CreditAmount',round('CreditAmount',5))\
                             .withColumn('DebitAmount',round('DebitAmount',5))
-            DSE = spark.read.format("parquet").load(STAGE1_PATH+"/"+"../../"+"Stage2/ParquetData/Masters/DSE").drop("DBName","EntityName")
+            DSE = spark.read.format("delta").load(STAGE2_PATH+"/Masters/DSE").drop("DBName","EntityName")
             GLEntry =  GLEntry.join(DSE,"DimensionSetID",'left')
             GLEntry=GLEntry.drop("GlobalDimension1Code","GlobalDimension12Code","GlobalDimension1Code13","GlobalDimension14Code","GlobalDimension1Code2")
             GLEntry.cache()
             print(GLEntry.count())
-            GLEntry.coalesce(1).write.format("parquet").mode("overwrite").option("overwriteSchema", "true").save(STAGE2_PATH+"/"+"Finance/ProfitLoss")
+            GLEntry.coalesce(1).write.format("delta").mode("overwrite").option("overwriteSchema", "true").save(STAGE2_PATH+"/"+"Finance/ProfitLoss")
             
             logger.endExecution()
             try:

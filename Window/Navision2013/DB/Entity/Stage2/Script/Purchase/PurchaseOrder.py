@@ -11,46 +11,50 @@ from builtins import str, len
 from datetime import date
 st = dt.datetime.now()
 Kockpit_Path =abspath(join(join(dirname(__file__),'..','..','..','..','..')))
-DB1_path =abspath(join(join(dirname(__file__),'..','..','..','..')))
+DB_path =abspath(join(join(dirname(__file__),'..','..','..','..')))
 sys.path.insert(0,'../../')
-sys.path.insert(0, DB1_path)
+sys.path.insert(0, DB_path)
 from Configuration.AppConfig import * 
 from Configuration.Constant import *
 from Configuration.udf import *
 from Configuration import udf as Kockpit
 Kockpit_Path =abspath(join(join(dirname(__file__),'..','..','..','..','..')))
 Filepath = os.path.dirname(os.path.abspath(__file__))
-FilePathSplit = Filepath.split('\\')
+FilePathSplit = Filepath.split('/')
 DBName = FilePathSplit[-5]
 EntityName = FilePathSplit[-4]
 DBEntity = DBName+EntityName
 DBNamepath= abspath(join(join(dirname(__file__), '..'),'..','..','..'))
-STAGE1_Configurator_Path=Kockpit_Path+"/" +DBName+"/" +EntityName+"/" +"Stage1/ConfiguratorData/"
-STAGE1_PATH=Kockpit_Path+"/" +DBName+"/" +EntityName+"/" +"Stage1/ParquetData"
-STAGE2_PATH=Kockpit_Path+"/" +DBName+"/" +EntityName+"/" +"Stage2/ParquetData"
+STAGE1_Configurator_Path=HDFS_PATH+DIR_PATH+"/" +DBName+"/" +EntityName+"/" +"Stage1/ConfiguratorData/"
+STAGE1_PATH=HDFS_PATH+DIR_PATH+"/" +DBName+"/" +EntityName+"/" +"Stage1/ParquetData"
+STAGE2_PATH=HDFS_PATH+DIR_PATH+"/" +DBName+"/" +EntityName+"/" +"Stage2/ParquetData"
 conf = SparkConf().setMaster(SPARK_MASTER).setAppName("PurchaseOrder")\
-        .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")\
         .set("spark.kryoserializer.buffer.max","512m")\
         .set("spark.cores.max","24")\
-        .set("spark.executor.memory","4g")\
-        .set("spark.driver.memory","24g")\
+        .set("spark.executor.memory","8g")\
+        .set("spark.driver.memory","30g")\
+        .set("spark.driver.maxResultSize","0")\
+        .set("spark.sql.debug.maxToStringFields","500")\
         .set("spark.driver.maxResultSize","20g")\
         .set("spark.memory.offHeap.enabled",'true')\
         .set("spark.memory.offHeap.size","100g")\
         .set('spark.scheduler.mode', 'FAIR')\
         .set("spark.sql.broadcastTimeout", "36000")\
         .set("spark.network.timeout", 10000000)\
-        .set("spark.jars.packages", "io.parquet:parquet-core_2.12:0.7.0")\
-        .set("spark.sql.extensions", "io.parquet.sql.DeltaSparkSessionExtension")\
-        .set("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.parquet.catalog.DeltaCatalog")\
-        .set("spark.databricks.parquet.vacuum.parallelDelete.enabled",'true')\
-        .set("spark.databricks.parquet.retentionDurationCheck.enabled",'false')\
+        .set("spark.sql.codegen.wholeStage","false")\
+        .set("spark.jars.packages", "io.delta:delta-core_2.12:0.7.0")\
+        .set("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")\
+        .set("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")\
+        .set("spark.databricks.delta.vacuum.parallelDelete.enabled",'true')\
+        .set("spark.databricks.delta.retentionDurationCheck.enabled",'false')\
         .set('spark.hadoop.mapreduce.output.fileoutputformat.compress', 'false')\
         .set("spark.rapids.sql.enabled", True)\
         .set("spark.sql.legacy.parquet.int96RebaseModeInWrite", "CORRECTED")
 sc = SparkContext(conf = conf)
 sqlCtx = SQLContext(sc)
 spark = sqlCtx.sparkSession
+import delta
+from delta.tables import *
 fs = sc._jvm.org.apache.hadoop.fs.FileSystem.get(sc._jsc.hadoopConfiguration())
 cy = date.today().year
 cm = date.today().month
@@ -61,13 +65,13 @@ for dbe in config["DbEntities"]:
         CompanyName=CompanyName.replace(" ","") 
         try:
             logger = Logger()
-            phDF =spark.read.format("parquet").load(STAGE1_PATH+"/Purchase Header")
-            plDF = spark.read.format("parquet").load(STAGE1_PATH+"/Purchase Line")
-            DSE=spark.read.format("parquet").load(STAGE2_PATH+"/"+"Masters/DSE")
-            PDDBucket =spark.read.format("parquet").load(STAGE1_Configurator_Path+"/tblPDDBucket")
-            SH = spark.read.format("parquet").load(STAGE1_PATH+"/Sales Header").select('No_','Bill-toCustomerNo_')\
+            phDF =spark.read.format("delta").load(STAGE1_PATH+"/Purchase Header")
+            plDF = spark.read.format("delta").load(STAGE1_PATH+"/Purchase Line")
+            DSE=spark.read.format("delta").load(STAGE2_PATH+"/"+"Masters/DSE")
+            PDDBucket =spark.read.format("delta").load(STAGE1_Configurator_Path+"/tblPDDBucket")
+            SH = spark.read.format("delta").load(STAGE1_PATH+"/Sales Header").select('No_','Bill-toCustomerNo_')\
                         .withColumnRenamed('No_','SalesOrderNo').withColumnRenamed('Bill-toCustomerNo_','CustomerCode')
-            SL = spark.read.format("parquet").load(STAGE1_PATH+"/Sales Line").select('DocumentNo_','LineNo_','Pur_OrderNo_','POLineNo_')\
+            SL = spark.read.format("delta").load(STAGE1_PATH+"/Sales Line").select('DocumentNo_','LineNo_','Pur_OrderNo_','POLineNo_')\
                         .withColumnRenamed('DocumentNo_','SalesOrderNo').withColumnRenamed('LineNo_','SalesOrderLineNo')
             SO = SL.join(SH,'SalesOrderNo', 'left')
             SO = SO.filter(SO['Pur_OrderNo_']!='')
@@ -97,7 +101,7 @@ for dbe in config["DbEntities"]:
                         .withColumn('Nod',when(PO.NOD_OrderDate<=(MaxLimit), PO.NOD_OrderDate).otherwise(PO.Nod))
             finalDF = PO.join(DSE,"DimensionSetID",'left')
             finalDF = RenameDuplicateColumns(finalDF).drop("locationtype")
-            finalDF.coalesce(1).write.format("parquet").mode("overwrite").option("overwriteSchema", "true").save(STAGE2_PATH+"/"+"Purchase/PurchaseOrder")
+            finalDF.coalesce(1).write.format("delta").mode("overwrite").option("overwriteSchema", "true").save(STAGE2_PATH+"/"+"Purchase/PurchaseOrder")
             logger.endExecution()
             
             try:

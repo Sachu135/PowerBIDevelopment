@@ -18,48 +18,43 @@ from Configuration.Constant import *
 from Configuration.udf import *
 from Configuration import udf as Kockpit
 Filepath = os.path.dirname(os.path.abspath(__file__))
-FilePathSplit = Filepath.split('/')
+FilePathSplit = Filepath.split('\\')
 DBName = FilePathSplit[-5]
 EntityName = FilePathSplit[-4]
 DBEntity = DBName+EntityName
-STAGE1_Configurator_Path=HDFS_PATH+DIR_PATH+"/" +DBName+"/" +EntityName+"/" +"Stage1/ConfiguratorData/"
-STAGE1_PATH=HDFS_PATH+DIR_PATH+"/" +DBName+"/" +EntityName+"/" +"Stage1/ParquetData"
-STAGE2_PATH=HDFS_PATH+DIR_PATH+"/" +DBName+"/" +EntityName+"/" +"Stage2/ParquetData"
-conf = SparkConf().setMaster(SPARK_MASTER).setAppName("ChartofAccounts")\
-        .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")\
-        .set("spark.kryoserializer.buffer.max","512m")\
-        .set("spark.cores.max","24")\
-        .set("spark.executor.memory","8g")\
-        .set("spark.driver.memory","30g")\
-        .set("spark.driver.maxResultSize","0")\
-        .set("spark.sql.debug.maxToStringFields","500")\
-        .set("spark.driver.maxResultSize","20g")\
-        .set("spark.memory.offHeap.enabled",'true')\
-        .set("spark.memory.offHeap.size","100g")\
-        .set('spark.scheduler.mode', 'FAIR')\
-        .set("spark.sql.broadcastTimeout", "36000")\
-        .set("spark.network.timeout", 10000000)\
-        .set("spark.sql.codegen.wholeStage","false")\
-        .set("spark.jars.packages", "io.delta:delta-core_2.12:0.7.0")\
-        .set("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")\
-        .set("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")\
-        .set("spark.databricks.delta.vacuum.parallelDelete.enabled",'true')\
-        .set("spark.databricks.delta.retentionDurationCheck.enabled",'false')\
-        .set('spark.hadoop.mapreduce.output.fileoutputformat.compress', 'false')\
-        .set("spark.rapids.sql.enabled", True)\
-        .set("spark.sql.legacy.parquet.int96RebaseModeInWrite", "CORRECTED")
+STAGE1_Configurator_Path=Kockpit_Path+"/" +DBName+"/" +EntityName+"/" +"Stage1/ConfiguratorData/"
+STAGE1_PATH=Kockpit_Path+"/" +DBName+"/" +EntityName+"/" +"Stage1/ParquetData"
+STAGE2_PATH=Kockpit_Path+"/" +DBName+"/" +EntityName+"/" +"Stage2/ParquetData"
+conf = SparkConf().setMaster("local[16]").setAppName("ChartofAccounts").\
+                    set("spark.sql.shuffle.partitions",16).\
+                    set("spark.serializer", "org.apache.spark.serializer.KryoSerializer").\
+                    set("spark.local.dir", "/tmp/spark-temp").\
+                    set("spark.driver.memory","30g").\
+                    set("spark.executor.memory","30g").\
+                    set("spark.driver.cores",16).\
+                    set("spark.driver.maxResultSize","0").\
+                    set("spark.sql.debug.maxToStringFields", "1000").\
+                    set("spark.executor.instances", "20").\
+                    set('spark.scheduler.mode', 'FAIR').\
+                    set("spark.sql.broadcastTimeout", "36000").\
+                    set("spark.network.timeout", 10000000).\
+                    set("spark.sql.legacy.parquet.datetimeRebaseModeInWrite", "LEGACY").\
+                    set("spark.sql.legacy.parquet.datetimeRebaseModeInRead", "LEGACY").\
+                    set("spark.sql.legacy.parquet.datetimeRebaseModeInRead", "CORRECTED").\
+                    set("spark.sql.legacy.timeParserPolicy","LEGACY").\
+                    set("spark.sql.legacy.parquet.int96RebaseModeInWrite","LEGACY").\
+                    set("spark.sql.legacy.parquet.int96RebaseModeInWrite","CORRECTED")
 sc = SparkContext(conf = conf)
 sqlCtx = SQLContext(sc)
 spark = sqlCtx.sparkSession
-import delta
-from delta.tables import *
 for dbe in config["DbEntities"]:
     if dbe['ActiveInactive']=='true' and  dbe['Location']==DBEntity:
         CompanyName=dbe['Name']
         CompanyName=CompanyName.replace(" ","")
         try:
             logger = Logger()
-            GLAccount=spark.read.format("delta").load(STAGE1_PATH+"/G_L Account" )
+          
+            GLAccount=spark.read.format("parquet").load(STAGE1_PATH+"/G_L Account" )
             GLAccount=GLAccount.select("No_","Name","AccountType","Income_Balance","Indentation","Totaling")
             GLAccount=GLAccount.filter(GLAccount["No_"]!='SERVER')
             Inde = [i.Indentation for i in GLAccount.select('Indentation').collect()]
@@ -105,7 +100,7 @@ for dbe in config["DbEntities"]:
             list=records.select('GLAccount').filter('Income_Balance=0').distinct().collect()
             NoOfRows=len(list)
             data1=[]
-            GLMapping=spark.read.format("delta").load(STAGE1_Configurator_Path+"tblGLAccountMapping").drop('ID')
+            GLMapping=spark.read.format("parquet").load(STAGE1_Configurator_Path+"tblGLAccountMapping").drop('ID')
             GLMapping = GLMapping.select([col(x).alias(x.replace(' ', '')) for x in GLMapping.columns])
             table = GLMapping.filter(col('GLRangeCategory').isin(['REVENUE','DE','INDE'])).filter(GLMapping['DBName'] == DBName).filter(GLMapping['EntityName'] == EntityName)
             table = table.withColumnRenamed("FromGLCode", "FromGL")
@@ -131,12 +126,12 @@ for dbe in config["DbEntities"]:
                         .withColumn('ToGL',table['ToGL'].cast('int'))
             table = table.withColumnRenamed("GLRangeCategory", "GLCategory")
             GLRangeCat = table.select("GLCategory","FromGL","ToGL").collect()
-            COA_Table=spark.read.format("delta").load(STAGE1_Configurator_Path+"/ChartofAccounts")
+            COA_Table=spark.read.format("parquet").load(STAGE1_Configurator_Path+"/ChartofAccounts")
             COA_Table = COA_Table.filter(COA_Table['DBName']==DBName).filter(COA_Table['EntityName']==EntityName)                        
             Config_COA = COA_Table
             PL_Headers = COA_Table.select('GLAccountNo','PLReportHeader')\
                         .withColumnRenamed('GLAccountNo','GLAccount')
-            
+           
             PL_Headers = PL_Headers.filter(PL_Headers['PLReportHeader']!='')
             BS_Headers = COA_Table.select('GLAccountNo','BSReportHeader').filter(COA_Table['BSReportHeader']!='')\
                                 .withColumnRenamed('GLAccountNo','GLAccount')
@@ -183,7 +178,7 @@ for dbe in config["DbEntities"]:
                         data2.append({'PLFlag2':"PBT",'GLAccount2':n})
                     if(a == 'PAT' and GLRangeCat[i]['FromGL'] <= n <= GLRangeCat[i]['ToGL']):
                         data3.append({'PLFlag3':"PAT",'GLAccount3':n})
-                
+                    
             data1=spark.createDataFrame(data1)
             data2=spark.createDataFrame(data2)
             data3=spark.createDataFrame(data3)
@@ -200,7 +195,7 @@ for dbe in config["DbEntities"]:
             records = records.join(BS_Headers,'GLAccount','left')    
             record_level7 = records.select('GLAccount','Level'+str(max(Inde)))
             records = records.withColumn("Link_PLReportHeader" , concat(records['DBName'],lit("|"),records['EntityName'],lit("|"),records['PLReportHeader'])).drop( 'PLReportHeader')
-            records.coalesce(1).write.format("delta").mode("overwrite").option("overwriteSchema", "true").save(STAGE2_PATH+"/"+"Masters/ChartofAccounts")
+            records.coalesce(1).write.format("parquet").mode("overwrite").option("overwriteSchema", "true").save(STAGE2_PATH+"/"+"Masters/ChartofAccounts")
             
             logger.endExecution()
             try:
@@ -217,12 +212,15 @@ for dbe in config["DbEntities"]:
                 print("type - "+str(exc_type))
                 print("File - "+exc_traceback.tb_frame.f_code.co_filename)
                 print("Error Line No. - "+str(exc_traceback.tb_lineno))
+                
                 logger.endExecution()
+        
                 try:
                     IDEorBatch = sys.argv[1]
                 except Exception as e :
                     IDEorBatch = "IDLE"
                 os.system("spark-submit "+Kockpit_Path+"/Email.py 1 ChartofAccounts '"+CompanyName+"' "+DBEntity+" "+str(exc_traceback.tb_lineno)+"")
+            
                 log_dict = logger.getErrorLoggedRecord('COA', '', '', str(ex), exc_traceback.tb_lineno, IDEorBatch)
                 log_df = spark.createDataFrame(log_dict, logger.getSchema())
                 log_df.write.jdbc(url=PostgresDbInfo.PostgresUrl, table="logs.logs", mode='append', properties=PostgresDbInfo.props)

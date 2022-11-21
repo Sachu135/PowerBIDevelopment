@@ -1,4 +1,3 @@
-
 from pyspark.sql import SparkSession
 from pyspark import SparkConf, SparkContext
 from pyspark.sql import SQLContext
@@ -22,45 +21,39 @@ from Configuration.AppConfig import *
 from Configuration.Constant import *
 from Configuration.udf import *
 from Configuration import udf as Kockpit
+
 Filepath = os.path.dirname(os.path.abspath(__file__))
-FilePathSplit = Filepath.split('/')
+FilePathSplit = Filepath.split('\\')
 DBName = FilePathSplit[-5]
 EntityName = FilePathSplit[-4]
 DBEntity = DBName+EntityName
 entityLocation = DBName+EntityName
-STAGE1_Configurator_Path=HDFS_PATH+DIR_PATH+"/" +DBName+"/" +EntityName+"/" +"Stage1/ConfiguratorData/"
-STAGE1_PATH=HDFS_PATH+DIR_PATH+"/" +DBName+"/" +EntityName+"/" +"Stage1/ParquetData"
-STAGE2_PATH=HDFS_PATH+DIR_PATH+"/" +DBName+"/" +EntityName+"/" +"Stage2/ParquetData"
+STAGE1_Configurator_Path=Kockpit_Path+"/" +DBName+"/" +EntityName+"/" +"Stage1/ConfiguratorData/"
+STAGE1_PATH=Kockpit_Path+"/" +DBName+"/" +EntityName+"/" +"Stage1/ParquetData"
+STAGE2_PATH=Kockpit_Path+"/" +DBName+"/" +EntityName+"/" +"Stage2/ParquetData"
 
-conf = SparkConf().setMaster(SPARK_MASTER).setAppName("BalanceSheet")\
-        .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")\
-        .set("spark.kryoserializer.buffer.max","512m")\
-        .set("spark.cores.max","24")\
-        .set("spark.executor.memory","8g")\
-        .set("spark.driver.memory","30g")\
-        .set("spark.driver.maxResultSize","0")\
-        .set("spark.sql.debug.maxToStringFields","500")\
-        .set("spark.driver.maxResultSize","20g")\
-        .set("spark.memory.offHeap.enabled",'true')\
-        .set("spark.memory.offHeap.size","100g")\
-        .set('spark.scheduler.mode', 'FAIR')\
-        .set("spark.sql.broadcastTimeout", "36000")\
-        .set("spark.network.timeout", 10000000)\
-        .set("spark.sql.codegen.wholeStage","false")\
-        .set("spark.jars.packages", "io.delta:delta-core_2.12:0.7.0")\
-        .set("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")\
-        .set("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")\
-        .set("spark.databricks.delta.vacuum.parallelDelete.enabled",'true')\
-        .set("spark.databricks.delta.retentionDurationCheck.enabled",'false')\
-        .set('spark.hadoop.mapreduce.output.fileoutputformat.compress', 'false')\
-        .set("spark.rapids.sql.enabled", True)\
-        .set("spark.sql.legacy.parquet.int96RebaseModeInWrite", "CORRECTED")
+conf = SparkConf().setMaster("local[16]").setAppName("BalanceSheet").\
+                    set("spark.sql.shuffle.partitions",16).\
+                    set("spark.serializer", "org.apache.spark.serializer.KryoSerializer").\
+                    set("spark.local.dir", "/tmp/spark-temp").\
+                    set("spark.driver.memory","30g").\
+                    set("spark.executor.memory","30g").\
+                    set("spark.driver.cores",16).\
+                    set("spark.driver.maxResultSize","0").\
+                    set("spark.sql.debug.maxToStringFields", "1000").\
+                    set("spark.executor.instances", "20").\
+                    set('spark.scheduler.mode', 'FAIR').\
+                    set("spark.sql.broadcastTimeout", "36000").\
+                    set("spark.network.timeout", 10000000).\
+                    set("spark.sql.legacy.parquet.datetimeRebaseModeInWrite", "LEGACY").\
+                    set("spark.sql.legacy.parquet.datetimeRebaseModeInRead", "LEGACY").\
+                    set("spark.sql.legacy.parquet.datetimeRebaseModeInRead", "CORRECTED").\
+                    set("spark.sql.legacy.timeParserPolicy","LEGACY").\
+                    set("spark.sql.legacy.parquet.int96RebaseModeInWrite","LEGACY").\
+                    set("spark.sql.legacy.parquet.int96RebaseModeInWrite","CORRECTED")
 sc = SparkContext(conf = conf)
 sqlCtx = SQLContext(sc)
 spark = sqlCtx.sparkSession
-import delta
-from delta.tables import *
-fs = sc._jvm.org.apache.hadoop.fs.FileSystem.get(sc._jsc.hadoopConfiguration())
 cdate = datetime.datetime.now().strftime('%Y-%m-%d')
 for dbe in config["DbEntities"]:
     if dbe['ActiveInactive']=='true' and  dbe['Location']==DBEntity:
@@ -68,11 +61,11 @@ for dbe in config["DbEntities"]:
         CompanyName=CompanyName.replace(" ","")
         try:
             logger = Logger()
-            VLE =spark.read.format("delta").load(STAGE1_PATH+"/Vendor Ledger Entry")
-            CLE =spark.read.format("delta").load(STAGE1_PATH+"/Cust_ Ledger Entry")
-            Company= spark.read.format("delta").load(STAGE1_Configurator_Path+"/tblCompanyName")
-            GL_Entry_Table= spark.read.format("delta").load(STAGE1_PATH+"/G_L Entry")
-            GL_Account_Table = spark.read.format("delta").load(STAGE1_PATH+"/G_L Account")  
+            VLE =spark.read.format("parquet").load(STAGE1_PATH+"/Vendor Ledger Entry")
+            CLE =spark.read.format("parquet").load(STAGE1_PATH+"/Cust_ Ledger Entry")
+            Company= spark.read.format("parquet").load(STAGE1_Configurator_Path+"/tblCompanyName")
+            GL_Entry_Table= spark.read.format("parquet").load(STAGE1_PATH+"/G_L Entry")
+            GL_Account_Table = spark.read.format("parquet").load(STAGE1_PATH+"/G_L Account")  
             VLE = VLE.select('VendorNo_','DocumentNo_')
             CLE = CLE.select('CustomerNo_','DocumentNo_')     
             Company = Company.filter(col('DBName')==DBName).filter(col('NewCompanyName') == EntityName)
@@ -255,6 +248,8 @@ for dbe in config["DbEntities"]:
             GLEntry_Temp = GLEntry_Temp.join(records).select('PostingDate','Amount','GLAccount','Link_date')
             GLEntry_Temp=GLEntry_Temp.filter(GLEntry_Temp['Link_date']>= GLEntry_Temp['PostingDate'])
             GLEntry_Temp=GLEntry_Temp.groupBy('Link_date','GLAccount').agg({'Amount':'sum'}).withColumnRenamed('sum(Amount)','Amount')   
+            GLEntry.cache()
+            print(GLEntry_Temp.count())
             GLEntry_Temp=GLEntry_Temp.withColumn("DBName",concat(lit(DBName))).withColumn("EntityName",concat(lit(EntityName)))
             GLEntry_Temp = GLEntry_Temp.withColumn('DBName',lit(DBName))\
                                     .withColumn('EntityName',lit(EntityName))\
@@ -264,8 +259,7 @@ for dbe in config["DbEntities"]:
             GLEntry_Temp = GLEntry_Temp.withColumn('Amount',round('Amount',5))
             GLEntry_Temp.cache()
             print(GLEntry_Temp.count())
-            GLEntry_Temp.coalesce(1).write.format("delta").mode("overwrite").option("overwriteSchema", "true").save(STAGE2_PATH+"/"+"Finance/BalanceSheet")
-            
+            GLEntry_Temp.coalesce(1).write.format("parquet").mode("overwrite").option("overwriteSchema", "true").save(STAGE2_PATH+"/"+"Finance/BalanceSheet")
             logger.endExecution()
                 
             try:
@@ -297,3 +291,5 @@ for dbe in config["DbEntities"]:
             log_df = spark.createDataFrame(log_dict, logger.getSchema())
             log_df.write.jdbc(url=PostgresDbInfo.PostgresUrl, table="logs.logs", mode='append', properties=PostgresDbInfo.props)
 print('finance_BalanceSheet completed: ' + str((dt.datetime.now()-st).total_seconds()))
+
+

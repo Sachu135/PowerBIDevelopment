@@ -17,43 +17,36 @@ from Configuration.Constant import *
 from Configuration.udf import *
 from Configuration import udf as Kockpit
 Filepath = os.path.dirname(os.path.abspath(__file__))
-FilePathSplit = Filepath.split('/')
+FilePathSplit = Filepath.split('\\')
 DBName = FilePathSplit[-5]
 EntityName = FilePathSplit[-4]
 DBEntity = DBName+EntityName
 DBNamepath= abspath(join(join(dirname(__file__), '..'),'..','..','..'))
-STAGE1_Configurator_Path=HDFS_PATH+DIR_PATH+"/" +DBName+"/" +EntityName+"/" +"Stage1/ConfiguratorData/"
-STAGE1_PATH=HDFS_PATH+DIR_PATH+"/" +DBName+"/" +EntityName+"/" +"Stage1/ParquetData"
-STAGE2_PATH=HDFS_PATH+DIR_PATH+"/" +DBName+"/" +EntityName+"/" +"Stage2/ParquetData"
-conf = SparkConf().setMaster(SPARK_MASTER).setAppName("PurchaseInvoice")\
-        .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")\
-        .set("spark.kryoserializer.buffer.max","512m")\
-        .set("spark.cores.max","24")\
-        .set("spark.executor.memory","8g")\
-        .set("spark.driver.memory","30g")\
-        .set("spark.driver.maxResultSize","0")\
-        .set("spark.sql.debug.maxToStringFields","500")\
-        .set("spark.driver.maxResultSize","20g")\
-        .set("spark.memory.offHeap.enabled",'true')\
-        .set("spark.memory.offHeap.size","100g")\
-        .set('spark.scheduler.mode', 'FAIR')\
-        .set("spark.sql.broadcastTimeout", "36000")\
-        .set("spark.network.timeout", 10000000)\
-        .set("spark.sql.codegen.wholeStage","false")\
-        .set("spark.jars.packages", "io.delta:delta-core_2.12:0.7.0")\
-        .set("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")\
-        .set("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")\
-        .set("spark.databricks.delta.vacuum.parallelDelete.enabled",'true')\
-        .set("spark.databricks.delta.retentionDurationCheck.enabled",'false')\
-        .set('spark.hadoop.mapreduce.output.fileoutputformat.compress', 'false')\
-        .set("spark.rapids.sql.enabled", True)\
-        .set("spark.sql.legacy.parquet.int96RebaseModeInWrite", "CORRECTED")
+STAGE1_Configurator_Path=Kockpit_Path+"/" +DBName+"/" +EntityName+"/" +"Stage1/ConfiguratorData/"
+STAGE1_PATH=Kockpit_Path+"/" +DBName+"/" +EntityName+"/" +"Stage1/ParquetData"
+STAGE2_PATH=Kockpit_Path+"/" +DBName+"/" +EntityName+"/" +"Stage2/ParquetData"
+conf = SparkConf().setMaster("local[16]").setAppName("PurchaseInvoice").\
+                    set("spark.sql.shuffle.partitions",16).\
+                    set("spark.serializer", "org.apache.spark.serializer.KryoSerializer").\
+                    set("spark.local.dir", "/tmp/spark-temp").\
+                    set("spark.driver.memory","30g").\
+                    set("spark.executor.memory","30g").\
+                    set("spark.driver.cores",16).\
+                    set("spark.driver.maxResultSize","0").\
+                    set("spark.sql.debug.maxToStringFields", "1000").\
+                    set("spark.executor.instances", "20").\
+                    set('spark.scheduler.mode', 'FAIR').\
+                    set("spark.sql.broadcastTimeout", "36000").\
+                    set("spark.network.timeout", 10000000).\
+                    set("spark.sql.legacy.parquet.datetimeRebaseModeInWrite", "LEGACY").\
+                    set("spark.sql.legacy.parquet.datetimeRebaseModeInRead", "LEGACY").\
+                    set("spark.sql.legacy.parquet.datetimeRebaseModeInRead", "CORRECTED").\
+                    set("spark.sql.legacy.timeParserPolicy","LEGACY").\
+                    set("spark.sql.legacy.parquet.int96RebaseModeInWrite","LEGACY").\
+                    set("spark.sql.legacy.parquet.int96RebaseModeInWrite","CORRECTED")
 sc = SparkContext(conf = conf)
 sqlCtx = SQLContext(sc)
 spark = sqlCtx.sparkSession
-import delta
-from delta.tables import *
-fs = sc._jvm.org.apache.hadoop.fs.FileSystem.get(sc._jsc.hadoopConfiguration())
 
 for dbe in config["DbEntities"]:
     if dbe['ActiveInactive']=='true' and  dbe['Location']==DBEntity:
@@ -62,29 +55,29 @@ for dbe in config["DbEntities"]:
         try:
             logger = Logger() 
             entityLocation = DBName+EntityName         
-            pil =spark.read.format("delta").load(STAGE1_PATH+"/Purch_ Inv_ Line")
-            pt=spark.read.format("delta").load(STAGE1_PATH+"/Payment Terms")
-            dse=spark.read.format("delta").load(STAGE2_PATH+"/"+"Masters/DSE")
+            pil =spark.read.format("parquet").load(STAGE1_PATH+"/Purch_ Inv_ Line")
+            pt=spark.read.format("parquet").load(STAGE1_PATH+"/Payment Terms")
+            dse=spark.read.format("parquet").load(STAGE2_PATH+"/"+"Masters/DSE")
             pt =pt.select("Code","DueDateCalculation")
-            prl=spark.read.format("delta").load(STAGE1_PATH+"/Purch_ Rcpt_ Line")
+            prl=spark.read.format("parquet").load(STAGE1_PATH+"/Purch_ Rcpt_ Line")
             prl=prl.select("ExpectedReceiptDate","DocumentNo_","LineNo_")
             prl = prl.withColumn('LinkRcptKey',concat_ws('|',prl.DocumentNo_,prl.LineNo_))
-            pih =spark.read.format("delta").load(STAGE1_PATH+"/Purch_ Inv_ Header")
-            gps =spark.read.format("delta").load(STAGE1_PATH+"/General Posting Setup")
-            pld =spark.read.format("delta").load(STAGE1_PATH+"/Posted Str Order Line Details")
-            VE = spark.read.format("delta").load(STAGE1_PATH+"/Value Entry")
+            pih =spark.read.format("parquet").load(STAGE1_PATH+"/Purch_ Inv_ Header")
+            gps =spark.read.format("parquet").load(STAGE1_PATH+"/General Posting Setup")
+            pld =spark.read.format("parquet").load(STAGE1_PATH+"/Posted Str Order Line Details")
+            VE = spark.read.format("parquet").load(STAGE1_PATH+"/Value Entry")
             pil = pil.filter((year(pil.PostingDate)!=1753) & (pil.Quantity!=0) & (pil.Type!=4))
-            GLRange=spark.read.format("delta").load(STAGE1_Configurator_Path+"/tblGLAccountMapping")
+            GLRange=spark.read.format("parquet").load(STAGE1_Configurator_Path+"/tblGLAccountMapping")
             pil = pil.na.fill({'Gen_Bus_PostingGroup':'NA','Gen_Prod_PostingGroup':'NA','DocumentNo_':'NA','LineNo_':'NA','PostingDate':'NA'})
             Line = pil\
                     .withColumn("No",when(pil.Type=='1',pil['No_'].cast('int')))\
                     .withColumn("GL_Link",concat_ws('|',lit(entityLocation),pil.Gen_Bus_PostingGroup.cast('string'), pil.Gen_Prod_PostingGroup.cast('string')))\
                     .withColumn("LinkValueEntry",concat_ws('|',pil.DocumentNo_.cast('string'),pil.LineNo_.cast('string'),to_date(pil.PostingDate).cast('string')))\
                     .withColumn("Link_GD",concat_ws('-',pil.DocumentNo_.cast('string'),pil.LineNo_.cast('string')))\
-                    .withColumn("LinkLocationCode",when(pil.LocationCode=='',lit("NA")).otherwise(pil.LocationCode))
+                    .withColumn("LinkLocationCode",when(pil.LocationCode=='',lit("NA")).otherwise(pil.LocationCode))\
                     
             Line = Kockpit.RENAME(Line,{"DimensionSetID":"DimSetID","DocumentNo_":"Document_No","Amount":"PurchaseAmount"})
-            Line = Line.drop('PostingDate')
+            Line = Line.drop('PostingDate','timestamp')
             Header = pih\
                     .withColumn("LinkVendor",when(pih['Pay-toVendorNo_']=='',lit("NA")).otherwise(pih["Pay-toVendorNo_"])).drop("Pay-toVendorNo_")\
                     .withColumn("MonthNum", month(pih.PostingDate))\
@@ -94,14 +87,16 @@ for dbe in config["DbEntities"]:
             Monthsdf = Kockpit.MONTHSDF(sqlCtx)
             mcond = [Header.MonthNum==Monthsdf.MonthNum1]
             Header = Kockpit.LJOIN(Header,Monthsdf,mcond)
-            Header = Header.drop('MonthNum','MonthNum1')
+            Header = Header.drop('MonthNum','MonthNum1','timestamp')
             Header = Header.na.fill({'Purchase_No':'NA'})
             GL_Master = gps.withColumn("GL_LinkDrop",concat_ws('|',lit(entityLocation),gps.Gen_Bus_PostingGroup,gps.Gen_Prod_PostingGroup)).drop('Gen_Bus_PostingGroup','Gen_Prod_PostingGroup')\
                                     .withColumn("GLAccount",when(gps.Purch_Account=='',0).otherwise(gps.Purch_Account)).drop('Purch_Account')
             Line = Line.withColumn('Document_No_key',concat_ws('|',lit(entityLocation),Line.Document_No))
             Header = Header.withColumn('Purchase_No_key',concat_ws('|',lit(entityLocation),Header.Purchase_No))
+            
             cond = [Line.Document_No_key == Header.Purchase_No_key]
             Purchase = Kockpit.LJOIN(Line,Header,cond)
+            
             Purchase = Purchase.withColumn('LinkRcptKey',concat_ws('|',Purchase.ReceiptDocumentNo_,Purchase.ReceiptDocumentLineNo_))
             GLRange = GLRange.filter(GLRange['DBName'] == DBName ).filter(GLRange['EntityName'] == EntityName ).filter(GLRange['GLRangeCategory']== 'Purchase Trading')
             GLRange = Kockpit.RENAME(GLRange,{'FromGLCode':'FromGL','ToGLCode':'ToGL','GLRangeCategory':'GLCategory'})
@@ -109,6 +104,7 @@ for dbe in config["DbEntities"]:
             cond1 = [Purchase.GL_Link == GL_Master.GL_LinkDrop]
             Purchase = Kockpit.LJOIN(Purchase,GL_Master,cond1)
             Purchase = Purchase.drop("GL_LinkDrop","GL_Link","Sales_No","Sales_No_key","Document_No_key")
+           
             pld = pld.filter((pld.Type==2) & (pld.DocumentType==2) & (pld.Tax_ChargeType==0))
             LineDetails = pld.withColumn("Link_GDDrop",concat_ws('-',pld.InvoiceNo_,pld.LineNo_)).drop("InvoiceNo_","LineNo_")\
                                                     .withColumnRenamed("AccountNo_","AccountNo")
@@ -131,8 +127,10 @@ for dbe in config["DbEntities"]:
                     Range1 = (Range1) | ((Purchase.No>=GLRange.select('FromGL').collect()[i]['FromGL']) \
                                         & (Purchase.No<=GLRange.select('ToGL').collect()[i]['ToGL']))
         
+            
             Purchase = Purchase.filter(((Purchase.Type!=2) | ((Purchase.Type==2) & (Range))) & ((Purchase.Type!=1) | ((Purchase.Type==1) & (Range1))))     
             Purchase = Purchase.withColumn("PurchaseAccount",when(Purchase.Type==2,Purchase.GLAccount).otherwise(when(Purchase.Type==1,Purchase.No).otherwise(lit(1))))
+
             Range2 = LineDetails['AccountNo']!=0
             NoOfRows = GLRange.count()
             for j in range(0,NoOfRows):
@@ -144,10 +142,12 @@ for dbe in config["DbEntities"]:
                     FromGL = "%s"%GLRange.select(GLRange.FromGL).collect()[i]['FromGL']
                     ToGL = "%s"%GLRange.select(GLRange.ToGL).collect()[i]['ToGL']
                     Range2 = (LineDetails['AccountNo']>=FromGL) & (LineDetails['AccountNo']<=ToGL)
-        
+            
             LineDetails = LineDetails[Range2]
             LineDetails=LineDetails.groupby('Link_GDDrop').sum('Amount').withColumnRenamed('sum(Amount)','ChargesfromVendor')
             cond2 = [Purchase.Link_GD == LineDetails.Link_GDDrop]
+           
+            
             Purchase = Kockpit.LJOIN(Purchase,LineDetails,cond2)
             Purchase = Purchase.drop("Link_GDDrop","Locationtype")
             Purchase = Purchase.withColumn('TransactionType',lit('Invoice'))
@@ -213,8 +213,7 @@ for dbe in config["DbEntities"]:
             Purchase = Kockpit.LJOIN(Purchase,pt,cond4)
             Purchase = Kockpit.RenameDuplicateColumns(Purchase).drop("expectedreceiptdate_1","LineNo__1","LinkRcptKey_1")
             Purchase.cache()
-            print(Purchase.count())
-            Purchase.coalesce(1).write.format("delta").mode("overwrite").option("overwriteSchema", "true").save(STAGE2_PATH+"/"+"Purchase/PurchaseInvoice")
+            Purchase.coalesce(1).write.format("parquet").mode("overwrite").option("overwriteSchema", "true").save(STAGE2_PATH+"/"+"Purchase/PurchaseInvoice")
             logger.endExecution()
             try:
                 IDEorBatch = sys.argv[1]

@@ -7,6 +7,7 @@ from os.path import dirname, join, abspath
 import datetime as dt 
 from builtins import str, len
 from datetime import date
+
 st = dt.datetime.now()
 Kockpit_Path =abspath(join(join(dirname(__file__),'..','..','..','..','..')))
 DB_path =abspath(join(join(dirname(__file__),'..','..','..','..')))
@@ -18,42 +19,36 @@ from Configuration.udf import *
 from Configuration import udf as Kockpit
 
 Filepath = os.path.dirname(os.path.abspath(__file__))
-FilePathSplit = Filepath.split('/')
+FilePathSplit = Filepath.split('\\')
 DBName = FilePathSplit[-5]
 EntityName = FilePathSplit[-4]
 DBEntity = DBName+EntityName
-STAGE1_Configurator_Path=HDFS_PATH+DIR_PATH+"/" +DBName+"/" +EntityName+"/" +"Stage1/ConfiguratorData/"
-STAGE1_PATH=HDFS_PATH+DIR_PATH+"/" +DBName+"/" +EntityName+"/" +"Stage1/ParquetData"
-STAGE2_PATH=HDFS_PATH+DIR_PATH+"/" +DBName+"/" +EntityName+"/" +"Stage2/ParquetData"
+STAGE1_Configurator_Path=Kockpit_Path+"/" +DBName+"/" +EntityName+"/" +"Stage1/ConfiguratorData/"
+STAGE1_PATH=Kockpit_Path+"/" +DBName+"/" +EntityName+"/" +"Stage1/ParquetData"
+STAGE2_PATH=Kockpit_Path+"/" +DBName+"/" +EntityName+"/" +"Stage2/ParquetData"
 DBNamepath= abspath(join(join(dirname(__file__), '..'),'..','..','..'))
-conf = SparkConf().setMaster(SPARK_MASTER).setAppName("Sales")\
-        .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")\
-        .set("spark.kryoserializer.buffer.max","512m")\
-        .set("spark.cores.max","24")\
-        .set("spark.executor.memory","8g")\
-        .set("spark.driver.memory","30g")\
-        .set("spark.driver.maxResultSize","0")\
-        .set("spark.sql.debug.maxToStringFields","500")\
-        .set("spark.driver.maxResultSize","20g")\
-        .set("spark.memory.offHeap.enabled",'true')\
-        .set("spark.memory.offHeap.size","100g")\
-        .set('spark.scheduler.mode', 'FAIR')\
-        .set("spark.sql.broadcastTimeout", "36000")\
-        .set("spark.network.timeout", 10000000)\
-        .set("spark.sql.codegen.wholeStage","false")\
-        .set("spark.jars.packages", "io.delta:delta-core_2.12:0.7.0")\
-        .set("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")\
-        .set("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")\
-        .set("spark.databricks.delta.vacuum.parallelDelete.enabled",'true')\
-        .set("spark.databricks.delta.retentionDurationCheck.enabled",'false')\
-        .set('spark.hadoop.mapreduce.output.fileoutputformat.compress', 'false')\
-        .set("spark.rapids.sql.enabled", True)\
-        .set("spark.sql.legacy.parquet.int96RebaseModeInWrite", "CORRECTED")
+conf = SparkConf().setMaster("local[16]").setAppName("Sales").\
+                    set("spark.sql.shuffle.partitions",16).\
+                    set("spark.serializer", "org.apache.spark.serializer.KryoSerializer").\
+                    set("spark.local.dir", "/tmp/spark-temp").\
+                    set("spark.driver.memory","30g").\
+                    set("spark.executor.memory","30g").\
+                    set("spark.driver.cores",16).\
+                    set("spark.driver.maxResultSize","0").\
+                    set("spark.sql.debug.maxToStringFields", "1000").\
+                    set("spark.executor.instances", "20").\
+                    set('spark.scheduler.mode', 'FAIR').\
+                    set("spark.sql.broadcastTimeout", "36000").\
+                    set("spark.network.timeout", 10000000).\
+                    set("spark.sql.legacy.parquet.datetimeRebaseModeInWrite", "LEGACY").\
+                    set("spark.sql.legacy.parquet.datetimeRebaseModeInRead", "LEGACY").\
+                    set("spark.sql.legacy.parquet.datetimeRebaseModeInRead", "CORRECTED").\
+                    set("spark.sql.legacy.timeParserPolicy","LEGACY").\
+                    set("spark.sql.legacy.parquet.int96RebaseModeInWrite","LEGACY").\
+                    set("spark.sql.legacy.parquet.int96RebaseModeInWrite","CORRECTED")
 sc = SparkContext(conf = conf)
 sqlCtx = SQLContext(sc)
 spark = sqlCtx.sparkSession
-fs = sc._jvm.org.apache.hadoop.fs.FileSystem.get(sc._jsc.hadoopConfiguration())
-
 cy = date.today().year
 cm = date.today().month
 
@@ -63,16 +58,16 @@ for dbe in config["DbEntities"]:
         CompanyName=CompanyName.replace(" ","")
         try:
             logger = Logger()
-            Company=spark.read.format("delta").load(STAGE1_Configurator_Path+"/tblCompanyName")
-            GLMap=spark.read.format("delta").load(STAGE1_Configurator_Path+"/tblGLAccountMapping")
-            SIH = spark.read.format("delta").load(STAGE1_PATH+"/Sales Invoice Header")
-            SCML = spark.read.format("delta").load(STAGE1_PATH+"/Sales Cr_Memo Line")
-            VE =spark.read.format("delta").load(STAGE1_PATH+"/Value Entry")
-            SCMH = spark.read.format("delta").load(STAGE1_PATH+"/Sales Cr_Memo Header")
-            DSE=spark.read.format("delta").load(STAGE2_PATH+"/"+"Masters/DSE")
-            COA=spark.read.format("delta").load(STAGE2_PATH+"/"+"Masters/ChartofAccounts")
-            PSOLD = spark.read.format("delta").load(STAGE1_PATH+"/Posted Str Order Line Details")
-            SIL =spark.read.format("delta").load(STAGE1_PATH+"/Sales Invoice Line") 
+            Company=spark.read.format("parquet").load(STAGE1_Configurator_Path+"/tblCompanyName")
+            GLMap=spark.read.format("parquet").load(STAGE1_Configurator_Path+"/tblGLAccountMapping")
+            SIH = spark.read.format("parquet").load(STAGE1_PATH+"/Sales Invoice Header")
+            SCML = spark.read.format("parquet").load(STAGE1_PATH+"/Sales Cr_Memo Line")
+            VE =spark.read.format("parquet").load(STAGE1_PATH+"/Value Entry")
+            SCMH = spark.read.format("parquet").load(STAGE1_PATH+"/Sales Cr_Memo Header")
+            DSE=spark.read.format("parquet").load(STAGE2_PATH+"/"+"Masters/DSE")
+            COA=spark.read.format("parquet").load(STAGE2_PATH+"/"+"Masters/ChartofAccounts")
+            PSOLD = spark.read.format("parquet").load(STAGE1_PATH+"/Posted Str Order Line Details")
+            SIL =spark.read.format("parquet").load(STAGE1_PATH+"/Sales Invoice Line") 
             Company = Company.filter(col('DBName')==DBName).filter(col('NewCompanyName') == EntityName)
             Calendar_StartDate = Company.select('StartDate').rdd.flatMap(lambda x: x).collect()[0]
             Calendar_StartDate = datetime.datetime.strptime(Calendar_StartDate,"%Y-%m-%d").date()
@@ -114,7 +109,7 @@ for dbe in config["DbEntities"]:
             SCML = SCML.filter(SCML['Type']!=4).filter(SCML['Quantity']!=0)
             SCML_DE = SCML
             SCML = SCML.filter(SCML['SCML_PostingDate']>=UIStartDate)
-            GPS = spark.read.format("delta").load(STAGE1_PATH+"/General Posting Setup")
+            GPS = spark.read.format("parquet").load(STAGE1_PATH+"/General Posting Setup")
             GPS = GPS.select('Gen_Bus_PostingGroup','Gen_Prod_PostingGroup','SalesAccount','COGSAccount','SalesCreditMemoAccount')
                  
             GPS_Sales = GPS.withColumn("GL_Link",concat_ws('|',GPS.Gen_Bus_PostingGroup,GPS.Gen_Prod_PostingGroup))\
@@ -129,7 +124,7 @@ for dbe in config["DbEntities"]:
             GPS_DE = GPS_DE.select('GL_Link','GLAccount')
             VE = VE.select('DocumentNo_','DocumentLineNo_','PostingDate','InvoicedQuantity','EntryType','SourceCode','DimensionSetID','CostAmountActual','ItemLedgerEntryType','ItemNo_')
             VE = VE.filter(VE['PostingDate']>=UIStartDate)
-            GL =spark.read.format("delta").load(STAGE1_PATH+"/G_L Entry")
+            GL =spark.read.format("parquet").load(STAGE1_PATH+"/G_L Entry")
              
             GL = GL.filter(GL['PostingDate']>=UIStartDate)
             SI = SIL.join(SIH, SIL['DocumentNo_']==SIH['No_'], 'left')
@@ -250,15 +245,15 @@ for dbe in config["DbEntities"]:
             GLEntry_Sales = GLEntry_Sales.join(DSE,"DimensionSetID",'left')  
             GLEntry_Sales.cache()
             print(GLEntry_Sales.count())
-            GLEntry_Sales.coalesce(1).write.format("delta").mode("overwrite").option("overwriteSchema", "true").save(STAGE2_PATH+"/"+"Sales/SalesGLEntry")
+            GLEntry_Sales.coalesce(1).write.format("parquet").mode("overwrite").option("overwriteSchema", "true").save(STAGE2_PATH+"/"+"Sales/SalesGLEntry")
             GLEntry_DE = GLEntry_DE.join(DSE,"DimensionSetID",'left')
             GLEntry_DE.cache()
             print(GLEntry_DE.count())
-            GLEntry_DE.coalesce(1).write.format("delta").mode("overwrite").option("overwriteSchema", "true").save(STAGE2_PATH+"/"+"Sales/ManualCOGS")   
+            GLEntry_DE.coalesce(1).write.format("parquet").mode("overwrite").option("overwriteSchema", "true").save(STAGE2_PATH+"/"+"Sales/ManualCOGS")   
             finalDF.cache()
             print(finalDF.count())
             finalDF=finalDF.drop('SystemEntry','Item_No')
-            finalDF.coalesce(1).write.format("delta").mode("overwrite").option("overwriteSchema", "true").save(STAGE2_PATH+"/"+"Sales/Sales")
+            finalDF.coalesce(1).write.format("parquet").mode("overwrite").option("overwriteSchema", "true").save(STAGE2_PATH+"/"+"Sales/Sales")
 
             logger.endExecution()
             try:

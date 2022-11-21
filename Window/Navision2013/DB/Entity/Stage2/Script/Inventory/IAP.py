@@ -1,4 +1,3 @@
-
 from pyspark.sql import SparkSession
 from pyspark import SparkConf, SparkContext
 from pyspark.sql import SQLContext
@@ -13,8 +12,7 @@ from os.path import dirname, join, abspath
 import datetime as dt
 st = dt.datetime.now()
 sys.path.insert(0,'../../../..')
-# Stage2_Path =abspath(join(join(dirname(__file__), '..'),'..','..','Stage2','ParquetData','Inventory'))
-# print(Stage2_Path)
+Stage2_Path =abspath(join(join(dirname(__file__), '..'),'..','..','Stage2','ParquetData','Inventory'))
 mode = 'overwrite'
 apmode = 'append'
 Kockpit_Path =abspath(join(join(dirname(__file__),'..','..','..','..','..')))
@@ -26,54 +24,36 @@ from Configuration.Constant import *
 from Configuration.udf import *
 from Configuration import udf as Kockpit
 Filepath = os.path.dirname(os.path.abspath(__file__))
-FilePathSplit = Filepath.split('/')
+FilePathSplit = Filepath.split('\\')
 DBName = FilePathSplit[-5]
 EntityName = FilePathSplit[-4]
 DBEntity = DBName+EntityName
 entityLocation = DBName+EntityName
-STAGE1_Configurator_Path=HDFS_PATH+DIR_PATH+"/" +DBName+"/" +EntityName+"/" +"Stage1/ConfiguratorData/"
-STAGE1_PATH=HDFS_PATH+DIR_PATH+"/" +DBName+"/" +EntityName+"/" +"Stage1/ParquetData"
-# STAGE1_Configurator_Path=Kockpit_Path+"/" +DBName+"/" +EntityName+"/" +"Stage1/ConfiguratorData/"
-# STAGE1_PATH=Kockpit_Path+"/" +DBName+"/" +EntityName+"/" +"Stage1/ParquetData"
-Stage2_Path =HDFS_PATH+DIR_PATH+"/" +DBName+"/" +EntityName+"/" +"Stage2/ParquetData/Inventory"
-# print(Stage2_Path)
-# exec("print(Stage2_Path+chr(34))")
-#+"/tempnotdonelot"+chr(34)+")")
-# Stage2_Path+chr(34)+"/tempnotdonelot"+chr(34)
-# exec("print(Stage2_Path+"+chr(34)+"/tempnotdonelot"+chr(34)+")")
-#
-# exit()
-# print(chr(34))
-# print(Stage2_Path+chr(34)+"/tempnotdonelot"+chr(34))
-# exit()
+STAGE1_Configurator_Path=Kockpit_Path+"/" +DBName+"/" +EntityName+"/" +"Stage1/ConfiguratorData/"
+STAGE1_PATH=Kockpit_Path+"/" +DBName+"/" +EntityName+"/" +"Stage1/ParquetData"
 
-conf = SparkConf().setMaster(SPARK_MASTER).setAppName("IAP")\
-        .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")\
-        .set("spark.kryoserializer.buffer.max","512m")\
-        .set("spark.cores.max","24")\
-        .set("spark.executor.memory","8g")\
-        .set("spark.driver.memory","30g")\
-        .set("spark.driver.maxResultSize","0")\
-        .set("spark.sql.debug.maxToStringFields","500")\
-        .set("spark.driver.maxResultSize","20g")\
-        .set("spark.memory.offHeap.enabled",'true')\
-        .set("spark.memory.offHeap.size","100g")\
-        .set('spark.scheduler.mode', 'FAIR')\
-        .set("spark.sql.broadcastTimeout", "36000")\
-        .set("spark.network.timeout", 10000000)\
-        .set("spark.sql.codegen.wholeStage","false")\
-        .set("spark.jars.packages", "io.delta:delta-core_2.12:0.7.0")\
-        .set("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")\
-        .set("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")\
-        .set("spark.databricks.delta.vacuum.parallelDelete.enabled",'true')\
-        .set("spark.databricks.delta.retentionDurationCheck.enabled",'false')\
-        .set('spark.hadoop.mapreduce.output.fileoutputformat.compress', 'false')\
-        .set("spark.rapids.sql.enabled", True)\
-        .set("spark.sql.legacy.parquet.int96RebaseModeInWrite", "CORRECTED")
+conf = SparkConf().setMaster("local[16]").setAppName("IAP").\
+                    set("spark.sql.shuffle.partitions",16).\
+                    set("spark.serializer", "org.apache.spark.serializer.KryoSerializer").\
+                    set("spark.local.dir", "/tmp/spark-temp").\
+                    set("spark.driver.memory","30g").\
+                    set("spark.executor.memory","30g").\
+                    set("spark.driver.cores",16).\
+                    set("spark.driver.maxResultSize","0").\
+                    set("spark.sql.debug.maxToStringFields", "1000").\
+                    set("spark.executor.instances", "20").\
+                    set('spark.scheduler.mode', 'FAIR').\
+                    set("spark.sql.broadcastTimeout", "36000").\
+                    set("spark.network.timeout", 10000000).\
+                    set("spark.sql.legacy.parquet.datetimeRebaseModeInWrite", "LEGACY").\
+                    set("spark.sql.legacy.parquet.datetimeRebaseModeInRead", "LEGACY").\
+                    set("spark.sql.legacy.parquet.datetimeRebaseModeInRead", "CORRECTED").\
+                    set("spark.sql.legacy.timeParserPolicy","LEGACY").\
+                    set("spark.sql.legacy.parquet.int96RebaseModeInWrite","LEGACY").\
+                    set("spark.sql.legacy.parquet.int96RebaseModeInWrite","CORRECTED")
 sc = SparkContext(conf = conf)
 sqlCtx = SQLContext(sc)
 spark = sqlCtx.sparkSession
-fs = sc._jvm.org.apache.hadoop.fs.FileSystem.get(sc._jsc.hadoopConfiguration())
 cdate = datetime.datetime.now().strftime('%Y-%m-%d')
 for dbe in config["DbEntities"]:
     if dbe['ActiveInactive']=='true' and  dbe['Location']==DBEntity:
@@ -91,7 +71,7 @@ try:
         flag=1
     except:
         flag=0
-    IAE = spark.read.format("delta").load(STAGE1_PATH+"/Item Application Entry")
+    IAE = spark.read.format("parquet").load(STAGE1_PATH+"/Item Application Entry")
     IAE.registerTempTable("ItemApplicationEntry")
     global ItemApp1,NotDoneLot1,Ref,NotDoneLot,Ref1
     if flag==1:
@@ -209,7 +189,6 @@ try:
         vRows=vRows+1
         vLot=vLot+1
         if vRows%5==0:
-            exec("print(Stage2_Path+"+chr(34)+"/tempnotdonelot"+chr(34)+")")
             exec("TempNotDoneLot%d"%vRows+".write.mode(owmode).save(Stage2_Path+"+chr(34)+"/tempnotdonelot"+chr(34)+")")
             exec("TempNotDoneLot%d"%vRows+"=spark.read.parquet(Stage2_Path+"+chr(34)+"/tempnotdonelot"+chr(34)+")",globals())
         exec("TempNotDoneLot%d"%vRows+".cache()")

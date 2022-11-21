@@ -26,39 +26,37 @@ DB0 = DB0[1]
 owmode = 'overwrite'
 apmode = 'append'                           
 st = dt.datetime.now()
-conf = SparkConf().setMaster(SPARK_MASTER).setAppName("Location")\
-        .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")\
-        .set("spark.kryoserializer.buffer.max","512m")\
-        .set("spark.cores.max","24")\
-        .set("spark.executor.memory","8g")\
-        .set("spark.driver.memory","30g")\
-        .set("spark.driver.maxResultSize","0")\
-        .set("spark.sql.debug.maxToStringFields","500")\
-        .set("spark.driver.maxResultSize","20g")\
-        .set("spark.memory.offHeap.enabled",'true')\
-        .set("spark.memory.offHeap.size","100g")\
-        .set('spark.scheduler.mode', 'FAIR')\
-        .set("spark.sql.broadcastTimeout", "36000")\
-        .set("spark.network.timeout", 10000000)\
-        .set("spark.sql.codegen.wholeStage","false")\
-        .set("spark.jars.packages", "io.delta:delta-core_2.12:0.7.0")\
-        .set("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")\
-        .set("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")\
-        .set("spark.databricks.delta.vacuum.parallelDelete.enabled",'true')\
-        .set("spark.databricks.delta.retentionDurationCheck.enabled",'false')\
-        .set('spark.hadoop.mapreduce.output.fileoutputformat.compress', 'false')\
-        .set("spark.rapids.sql.enabled", True)\
-        .set("spark.sql.legacy.parquet.int96RebaseModeInWrite", "CORRECTED")
+conf = SparkConf().setMaster("local[16]").setAppName("Location").\
+                    set("spark.sql.shuffle.partitions",16).\
+                    set("spark.serializer", "org.apache.spark.serializer.KryoSerializer").\
+                    set("spark.local.dir", "/tmp/spark-temp").\
+                    set("spark.driver.memory","30g").\
+                    set("spark.executor.memory","30g").\
+                    set("spark.driver.cores",16).\
+                    set("spark.driver.maxResultSize","0").\
+                    set("spark.sql.debug.maxToStringFields", "1000").\
+                    set("spark.executor.instances", "20").\
+                    set('spark.scheduler.mode', 'FAIR').\
+                    set("spark.sql.broadcastTimeout", "36000").\
+                    set("spark.network.timeout", 10000000).\
+                    set("spark.sql.legacy.parquet.datetimeRebaseModeInWrite", "LEGACY").\
+                    set("spark.sql.legacy.parquet.datetimeRebaseModeInRead", "LEGACY").\
+                    set("spark.sql.legacy.parquet.datetimeRebaseModeInRead", "CORRECTED").\
+                    set("spark.sql.legacy.timeParserPolicy","LEGACY").\
+                    set("spark.sql.legacy.parquet.int96RebaseModeInWrite","LEGACY").\
+                    set("spark.sql.legacy.parquet.int96RebaseModeInWrite","CORRECTED")
 sc = SparkContext(conf = conf)
 sqlCtx = SQLContext(sc)
 spark = sqlCtx.sparkSession
-fs = sc._jvm.org.apache.hadoop.fs.FileSystem.get(sc._jsc.hadoopConfiguration())
-ConfTab='tblCompanyName'
+
 try:
+    
+    ConfTab='tblCompanyName'
     Query="(SELECT *\
                     FROM "+ConfiguratorDbInfo.Schema+"."+chr(34)+ConfTab+chr(34)+") AS df"
     CompanyDetail = spark.read.format("jdbc").options(url=ConfiguratorDbInfo.PostgresUrl, dbtable=Query,user=ConfiguratorDbInfo.props["user"],password=ConfiguratorDbInfo.props["password"],driver= ConfiguratorDbInfo.props["driver"]).load()
     CompanyDetail=CompanyDetail.filter((CompanyDetail['ActiveCompany']=='true'))
+
     for d in range(len(DBList)):  
         DB=DBList[d]
         logger =Logger()
@@ -76,26 +74,32 @@ try:
                 CompanyName=(CompanyDetail.collect()[i]['CompanyName'])
                 DBE=DBName+EntityName
                 CompanyName=CompanyName.replace(" ","")
-                Path = HDFS_PATH+DIR_PATH+"/"+DBName+"/"+EntityName+"/Stage2/ParquetData/Masters/Location"
-                fe = fs.exists(sc._jvm.org.apache.hadoop.fs.Path(Path))
-                if(fe):
-                    finalDF=spark.read.format("delta").load(Path)
+                Path = Abs_Path+"/"+DBName+"/"+EntityName+"\\Stage2\\ParquetData\\Masters\Location"
+               
+                if os.path.exists(Path):
+                    
+                    finalDF1=spark.read.parquet(Path)
+                    
                     if (d==0) & (i==0):
+                       
                         finalDF=finalDF1
-                        
+    
                     else:
-                        finalDF=finalDF.unionByName(finalDF1,allowMissingColumns=True)
                         
+                        finalDF=finalDF.unionByName(finalDF1,allowMissingColumns=True)
+                              
                 else:
                     print("Location "+DBName+EntityName+" Does not exist")
+                                
     finalDF.write.jdbc(url=PostgresDbInfo.PostgresUrl , table="Masters.Location", mode=owmode, properties=PostgresDbInfo.props)
+              
     logger.endExecution()
     try:
         IDEorBatch = sys.argv[1]
     except Exception as e :
         IDEorBatch = "IDLE"
 
-    log_dict = logger.getSuccessLoggedRecord("Masters.Location", DB0, "", finalDF.count(), len(finalDF.columns), IDEorBatch)
+    log_dict = logger.getSuccessLoggedRecord("Masters.Location", DB0, " ", finalDF.count(), len(finalDF.columns), IDEorBatch)
     log_df = spark.createDataFrame(log_dict, logger.getSchema())
     log_df.write.jdbc(url=PostgresDbInfo.PostgresUrl, table="logs.logs", mode='append', properties=PostgresDbInfo.props)                 
 except Exception as ex:
@@ -111,8 +115,10 @@ except Exception as ex:
     except Exception as e :
         IDEorBatch = "IDLE"
     DBE=DBName+EntityName
-    os.system("spark-submit "+Kockpit_Path+"\Email.py 1 Location "+CompanyName+" "" "+str(exc_traceback.tb_lineno)+"")   
-    log_dict = logger.getErrorLoggedRecord('Masters.Location', DB0, "" , str(ex), exc_traceback.tb_lineno, IDEorBatch)
+    os.system("spark-submit "+Kockpit_Path+"\Email.py 1 Location "+CompanyName+" "+" "+str(exc_traceback.tb_lineno)+"")   
+    log_dict = logger.getErrorLoggedRecord('Masters.Location', DB0, " " , str(ex), exc_traceback.tb_lineno, IDEorBatch)
     log_df = spark.createDataFrame(log_dict, logger.getSchema())
     log_df.write.jdbc(url=PostgresDbInfo.PostgresUrl, table="logs.logs", mode='append', properties=PostgresDbInfo.props)        
-print('masters Location completed: ' + str((dt.datetime.now()-st).total_seconds()))        
+print('Masters_ Location completed: ' + str((dt.datetime.now()-st).total_seconds()))     
+      
+      

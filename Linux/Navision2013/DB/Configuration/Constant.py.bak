@@ -6,24 +6,22 @@ yr = 3
 owmode = 'overwrite'
 apmode = 'append'
 HDFS_PATH = "hdfs://master:9000"
-DIR_PATH="#ConfiguratorInstallationDrive"
-SPARK_MASTER = "spark://#ConfiguratorDbInfo_ServerIP:7077"
+DIR_PATH="/home/hadoop/KOCKPIT"
+SPARK_MASTER = 'spark://#ConfiguratorDbInfo_ServerIP:7077'
 class PostgresDbInfo:
     Host = "#PostgresDbInfo_Host"      
-    Port = "#PostgresDbInfo_Port"   
-    MetadataDB = ".metadata"
-    MetadataDBUrl = "jdbc:postgresql://" + Host + "/" + MetadataDB
+    Port = "#PostgresDbInfo_Port"  
     PostgresDB = "#PostgresDbInfo_PostgresDB"  
     PostgresUrl = "jdbc:postgresql://" + Host + "/" + PostgresDB
     props = {"user":"#PostgresDbInfo_User", "password":"#PostgresDbInfo_Password", "driver": "org.postgresql.Driver"}   
     
-class ConfiguratorDbInfo:
+class ConfiguratorDbInfo: 
     Host = "#ConfiguratorDbInfo_Host"     
-    Port = "#ConfiguratorDbInfo_Port"               
+    Port = "#ConfiguratorDbInfo_Port"         
     PostgresDB = "Configurator" 
     Schema = "#ConfiguratorDbInfo_Schema"              
     PostgresUrl = "jdbc:postgresql://" + Host + "/" + PostgresDB
-	props = {"user":"#ConfiguratorDbInfo_User", "password":"#ConfiguratorDbInfo_Password", "driver": "org.postgresql.Driver"}
+    props = {"user":"#ConfiguratorDbInfo_User", "password":"#ConfiguratorDbInfo_Password", "driver": "org.postgresql.Driver"}
 class ConnectionInfo:
     JDBC_PARAM = "jdbc"
     SQL_SERVER_DRIVER = "com.microsoft.sqlserver.jdbc.SQLServerDriver"
@@ -95,4 +93,23 @@ class Logger:
                 }]
         
         
- 
+     
+        
+    class PowerBISync:
+        LOGIN_URL = 'https://login.microsoftonline.com/common/oauth2/token'
+        LOGIN_REQUEST_PARAMS = {'grant_type': 'password',
+             'username': '',
+             'password': '',
+             'client_id': '',
+             'client_secret': '',
+             'resource': 'https://analysis.windows.net/powerbi/api',
+             'prompy': 'admin_consent'}
+        WORKSPACE_ID = ''
+        Masters_Dataset=""
+        Sales_Dataset=""
+        Purchase_Dataset=""
+        Finance_Dataset=""
+        Inventory_Dataset=""
+        GET_WORKSPACE_DATASET = 'https://api.powerbi.com/v1.0/myorg/groups/' + WORKSPACE_ID + '/datasets'
+        REFRESH_WORKSPACE_DATASETS = 'https://api.powerbi.com/v1.0/myorg/groups/' + WORKSPACE_ID + '/datasets/{0}/refreshes'
+        REFRESH_NOTIFY_OPTION = {'notifyOption': 'MailOnFailure'}

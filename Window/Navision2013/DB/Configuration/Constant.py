@@ -5,16 +5,19 @@ MnSt = 4
 yr = 3
 owmode = 'overwrite'
 apmode = 'append'
+HDFS_PATH = "hdfs://master:9000"
+DIR_PATH="/home/hadoop/KOCKPIT"
+SPARK_MASTER = 'spark://#ConfiguratorDbInfo_ServerIP:7077'
 class PostgresDbInfo:
     Host = "#PostgresDbInfo_Host"      
-    Port = "#PostgresDbInfo_Port"
+    Port = "#PostgresDbInfo_Port"  
     PostgresDB = "#PostgresDbInfo_PostgresDB"  
     PostgresUrl = "jdbc:postgresql://" + Host + "/" + PostgresDB
     props = {"user":"#PostgresDbInfo_User", "password":"#PostgresDbInfo_Password", "driver": "org.postgresql.Driver"}   
     
-class ConfiguratorDbInfo:
+class ConfiguratorDbInfo: 
     Host = "#ConfiguratorDbInfo_Host"     
-    Port = "#ConfiguratorDbInfo_Port"               
+    Port = "#ConfiguratorDbInfo_Port"         
     PostgresDB = "Configurator" 
     Schema = "#ConfiguratorDbInfo_Schema"              
     PostgresUrl = "jdbc:postgresql://" + Host + "/" + PostgresDB
@@ -90,4 +93,22 @@ class Logger:
                 }]
         
         
- 
+     
+        
+class PowerBISync:
+    LOGIN_URL = 'https://login.microsoftonline.com/common/oauth2/token'
+    LOGIN_REQUEST_PARAMS = {'grant_type': 'password',
+         'username': '#Azure_PowerBIId',
+         'password': '#Azure_Password',
+         'client_id': '#Azure_ClientId'
+         'resource': 'https://analysis.windows.net/powerbi/api',
+         'prompy': 'admin_consent'}
+    WORKSPACE_ID = '#Azure_WorkSpaceId'
+    Masters_Dataset="#Azure_MastersDS"
+    Sales_Dataset="#Azure_SalesDS"
+    Purchase_Dataset="#Azure_PurchaseDS"
+    Finance_Dataset="#Azure_FinanceDS"
+    Inventory_Dataset="#Azure_InventoryDS"
+    GET_WORKSPACE_DATASET = 'https://api.powerbi.com/v1.0/myorg/groups/' + WORKSPACE_ID + '/datasets'
+    REFRESH_WORKSPACE_DATASETS = 'https://api.powerbi.com/v1.0/myorg/groups/' + WORKSPACE_ID + '/datasets/{0}/refreshes'
+    REFRESH_NOTIFY_OPTION = {'notifyOption': 'MailOnFailure'}
